@@ -565,7 +565,7 @@ export async function getTraefikConfig(
 
                 if (!target.site.online) return false;
 
-                if (target.health == "unhealthy") return false;
+                if (target.health === "unhealthy") return false;
 
                 return true;
             });
