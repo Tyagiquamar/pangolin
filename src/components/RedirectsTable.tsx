@@ -214,7 +214,7 @@ export default function RedirectsTable({
                                 className="inline-flex items-center gap-1.5"
                             >
                                 <Link
-                                    href={`/${orgId}/settings/resources/${redirect.resourceNiceId}`}
+                                    href={`/${orgId}/settings/resources/public/${redirect.resourceNiceId}`}
                                 >
                                     <WaypointsIcon className="size-3 text-muted-foreground" />
                                     {redirect.resourceName}
