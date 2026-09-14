@@ -14,10 +14,12 @@ import {
     ControlledDataTable,
     type ExtendedColumnDef
 } from "@app/components/ui/controlled-data-table";
+import { ResourceAccessCertIndicator } from "@app/components/ResourceAccessCertIndicator";
 import { useEnvContext } from "@app/hooks/useEnvContext";
 import { useNavigationContext } from "@app/hooks/useNavigationContext";
 import { toast } from "@app/hooks/useToast";
 import { createApiClient, formatAxiosError } from "@app/lib/api";
+import type { GetBatchedCertificateResponse } from "@server/routers/certificates/types";
 import type { PaginationState } from "@tanstack/react-table";
 import {
     ArrowRight,
@@ -48,6 +50,7 @@ export type RedirectRow = {
     resourceName: string | null;
     resourceNiceId: string | null;
     resourceFullDomain: string | null;
+    resourceDomainId: string | null;
     domainId: string | null;
     baseDomain: string | null;
 };
@@ -57,13 +60,15 @@ type RedirectsTableProps = {
     orgId: string;
     pagination: PaginationState;
     rowCount: number;
+    initialCertificates?: GetBatchedCertificateResponse;
 };
 
 export default function RedirectsTable({
     redirects,
     orgId,
     pagination,
-    rowCount
+    rowCount,
+    initialCertificates
 }: RedirectsTableProps) {
     const router = useRouter();
     const t = useTranslations();
@@ -263,16 +268,33 @@ export default function RedirectsTable({
                               .join(".")
                         : null;
                     const host = redirect.resourceFullDomain ?? domainHost;
+                    // The cert lives on whichever domain actually terminates
+                    // TLS: the resource's domain when attached to a resource,
+                    // otherwise the redirect's own domain.
+                    const certDomainId =
+                        redirect.resourceDomainId ?? redirect.domainId;
 
                     return (
-                        <code className="text-sm truncate">
-                            {host ?? ""}
-                            <span className="text-muted-foreground">
-                                {redirect.pathMatchType === "prefix"
-                                    ? withPrefixGlob(redirect.matchPath)
-                                    : redirect.matchPath}
-                            </span>
-                        </code>
+                        <div className="flex items-center gap-2 min-w-0">
+                            {certDomainId && host ? (
+                                <ResourceAccessCertIndicator
+                                    orgId={orgId}
+                                    domainId={certDomainId}
+                                    fullDomain={host}
+                                    initialCertValue={
+                                        initialCertificates?.[host]
+                                    }
+                                />
+                            ) : null}
+                            <code className="text-sm truncate">
+                                {host ?? ""}
+                                <span className="text-muted-foreground">
+                                    {redirect.pathMatchType === "prefix"
+                                        ? withPrefixGlob(redirect.matchPath)
+                                        : redirect.matchPath}
+                                </span>
+                            </code>
+                        </div>
                     );
                 }
             },
@@ -371,7 +393,7 @@ export default function RedirectsTable({
                 )
             }
         ],
-        [orgId, t]
+        [orgId, t, initialCertificates]
     );
 
     return (

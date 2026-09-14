@@ -2,6 +2,8 @@ import RedirectsTable from "@app/components/RedirectsTable";
 import SettingsSectionTitle from "@app/components/SettingsSectionTitle";
 import { internal } from "@app/lib/api";
 import { authCookieHeader } from "@app/lib/api/cookies";
+import { build } from "@server/build";
+import type { GetBatchedCertificateResponse } from "@server/routers/certificates/types";
 import type { ListRedirectsResponse } from "@server/routers/redirect";
 import type { AxiosResponse } from "axios";
 import type { Metadata } from "next";
@@ -42,6 +44,60 @@ export default async function RedirectIndexPage(props: RedirectIndexPageProps) {
         // empty list on error
     }
 
+    const redirectRows = redirects.map((redirect) => ({
+        redirectId: redirect.redirectId,
+        niceId: redirect.niceId,
+        name: redirect.name,
+        subdomain: redirect.subdomain,
+        destinationDomain: redirect.destinationDomain,
+        pathMatchType: redirect.pathMatchType,
+        matchPath: redirect.matchPath,
+        rewritePath: redirect.rewritePath,
+        rewritePathType: redirect.rewritePathType,
+        permanent: redirect.permanent,
+        enabled: redirect.enabled,
+        resourceId: redirect.resourceId,
+        resourceName: redirect.resourceName,
+        resourceNiceId: redirect.resourceNiceId,
+        resourceFullDomain: redirect.resourceFullDomain,
+        resourceDomainId: redirect.resourceDomainId,
+        domainId: redirect.domainId,
+        baseDomain: redirect.baseDomain
+    }));
+
+    // Prefetched in one batched call so the table doesn't fire a separate
+    // certificate request per visible row once it mounts on the client.
+    const certDomains = Array.from(
+        new Set(
+            redirectRows
+                .map((r) => {
+                    const domainHost = r.baseDomain
+                        ? [r.subdomain, r.baseDomain].filter(Boolean).join(".")
+                        : null;
+                    return r.resourceFullDomain ?? domainHost;
+                })
+                .filter((host): host is string => Boolean(host))
+        )
+    );
+
+    let initialCertificates: GetBatchedCertificateResponse | undefined;
+    if (build !== "oss" && certDomains.length > 0) {
+        try {
+            const certSearchParams = new URLSearchParams(
+                certDomains.map((domain) => ["domains", domain])
+            );
+            const certRes = await internal.get<
+                AxiosResponse<GetBatchedCertificateResponse>
+            >(
+                `/org/${orgId}/batched-certificates?${certSearchParams.toString()}`,
+                await authCookieHeader()
+            );
+            initialCertificates = certRes.data.data;
+        } catch {
+            // leave undefined so each row falls back to fetching its own
+        }
+    }
+
     return (
         <>
             <SettingsSectionTitle
@@ -51,30 +107,13 @@ export default async function RedirectIndexPage(props: RedirectIndexPageProps) {
 
             <RedirectsTable
                 orgId={orgId}
-                redirects={redirects.map((redirect) => ({
-                    redirectId: redirect.redirectId,
-                    niceId: redirect.niceId,
-                    name: redirect.name,
-                    subdomain: redirect.subdomain,
-                    destinationDomain: redirect.destinationDomain,
-                    pathMatchType: redirect.pathMatchType,
-                    matchPath: redirect.matchPath,
-                    rewritePath: redirect.rewritePath,
-                    rewritePathType: redirect.rewritePathType,
-                    permanent: redirect.permanent,
-                    enabled: redirect.enabled,
-                    resourceId: redirect.resourceId,
-                    resourceName: redirect.resourceName,
-                    resourceNiceId: redirect.resourceNiceId,
-                    resourceFullDomain: redirect.resourceFullDomain,
-                    domainId: redirect.domainId,
-                    baseDomain: redirect.baseDomain
-                }))}
+                redirects={redirectRows}
                 rowCount={pagination.total}
                 pagination={{
                     pageIndex: pagination.page - 1,
                     pageSize: pagination.pageSize
                 }}
+                initialCertificates={initialCertificates}
             />
         </>
     );
