@@ -17,6 +17,7 @@ import {
     redirectRewritePathSchema,
     redirectRewritePathTypeSchema
 } from "@server/routers/redirect/validation";
+import { createCertificate } from "../certificates";
 
 export type UpdateRedirectResponse = {
     redirect: Redirect;
@@ -113,6 +114,22 @@ export async function updateRedirect(
             );
         }
 
+        const effectiveResourceId =
+            body.resourceId !== undefined
+                ? body.resourceId
+                : existing.resourceId;
+        const effectiveDomainId =
+            body.domainId !== undefined ? body.domainId : existing.domainId;
+
+        if (Boolean(effectiveResourceId) === Boolean(effectiveDomainId)) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Exactly one of resourceId or domainId must be provided"
+                )
+            );
+        }
+
         if (body.resourceId) {
             const [resource] = await db
                 .select({ resourceId: resources.resourceId })
@@ -135,9 +152,13 @@ export async function updateRedirect(
             }
         }
 
-        if (body.domainId) {
-            const [domain] = await db
-                .select({ domainId: domains.domainId })
+        let domain: { domainId: string; baseDomain: string } | null = null;
+        if (effectiveDomainId) {
+            const [d] = await db
+                .select({
+                    domainId: domains.domainId,
+                    baseDomain: domains.baseDomain
+                })
                 .from(domains)
                 .innerJoin(
                     orgDomains,
@@ -145,17 +166,18 @@ export async function updateRedirect(
                 )
                 .where(
                     and(
-                        eq(domains.domainId, body.domainId),
+                        eq(domains.domainId, effectiveDomainId),
                         eq(orgDomains.orgId, existing.orgId)
                     )
                 )
                 .limit(1);
 
+            domain = d ?? null;
             if (!domain) {
                 return next(
                     createHttpError(
                         HttpCode.NOT_FOUND,
-                        `Domain with ID ${body.domainId} not found`
+                        `Domain with ID ${effectiveDomainId} not found`
                     )
                 );
             }
@@ -233,6 +255,17 @@ export async function updateRedirect(
                 )
             )
             .returning();
+
+        if (domain) {
+            const effectiveSubdomain =
+                body.subdomain !== undefined
+                    ? body.subdomain
+                    : existing.subdomain;
+            const fullDomain = [effectiveSubdomain ?? null, domain.baseDomain]
+                .filter(Boolean)
+                .join(".");
+            await createCertificate(domain.domainId, fullDomain, db);
+        }
 
         return response<UpdateRedirectResponse>(res, {
             data: {

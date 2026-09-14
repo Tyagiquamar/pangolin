@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db, domains, orgDomains, redirects, resources } from "@server/db";
-import type { Redirect } from "@server/db";
+import type { Domain, Redirect, Resource } from "@server/db";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
@@ -17,6 +17,7 @@ import {
     redirectRewritePathTypeSchema
 } from "@server/routers/redirect/validation";
 import { getUniqueRedirectName } from "@server/db/names";
+import { createCertificate } from "../certificates";
 
 export type CreateRedirectResponse = {
     redirect: Redirect;
@@ -26,31 +27,37 @@ const paramsSchema = z.strictObject({
     orgId: z.string().nonempty()
 });
 
-const bodySchema = z.strictObject({
-    name: z.string().nonempty(),
-    resourceId: z.number().int().positive().optional().nullable(),
-    domainId: z.string().nonempty().optional().nullable(),
-    subdomain: z.string().nonempty().optional().nullable(),
-    destinationDomain: redirectDestinationDomainSchema,
-    pathMatchType: redirectPathMatchTypeSchema.optional(),
-    matchPath: redirectMatchPathSchema,
-    rewritePath: redirectRewritePathSchema.optional().nullable(),
-    rewritePathType: redirectRewritePathTypeSchema.optional().nullable(),
-    permanent: z.boolean().optional(),
-    enabled: z.boolean().optional()
-}).refine(
-    (data) =>
-        // stripPrefix removes the matched prefix and needs no replacement
-        // value; every other rewrite type is meaningless without one.
-        !data.rewritePathType ||
-        data.rewritePathType === "stripPrefix" ||
-        Boolean(data.rewritePath),
-    {
-        message:
-            "rewritePath is required unless rewritePathType is stripPrefix",
-        path: ["rewritePath"]
-    }
-);
+const bodySchema = z
+    .strictObject({
+        name: z.string().nonempty(),
+        resourceId: z.number().int().positive().optional().nullable(),
+        domainId: z.string().nonempty().optional().nullable(),
+        subdomain: z.string().nonempty().optional().nullable(),
+        destinationDomain: redirectDestinationDomainSchema,
+        pathMatchType: redirectPathMatchTypeSchema.optional(),
+        matchPath: redirectMatchPathSchema,
+        rewritePath: redirectRewritePathSchema.optional().nullable(),
+        rewritePathType: redirectRewritePathTypeSchema.optional().nullable(),
+        permanent: z.boolean().optional(),
+        enabled: z.boolean().optional()
+    })
+    .refine(
+        (data) =>
+            // stripPrefix removes the matched prefix and needs no replacement
+            // value; every other rewrite type is meaningless without one.
+            !data.rewritePathType ||
+            data.rewritePathType === "stripPrefix" ||
+            Boolean(data.rewritePath),
+        {
+            message:
+                "rewritePath is required unless rewritePathType is stripPrefix",
+            path: ["rewritePath"]
+        }
+    )
+    .refine((data) => Boolean(data.resourceId) !== Boolean(data.domainId), {
+        message: "Exactly one of resourceId or domainId must be provided",
+        path: ["resourceId"]
+    });
 
 registry.registerPath({
     method: "put",
@@ -115,9 +122,10 @@ export async function createRedirect(
             enabled
         } = parsedBody.data;
 
+        let resource: Resource | null = null;
         if (resourceId) {
-            const [resource] = await db
-                .select({ resourceId: resources.resourceId })
+            const res = await db
+                .select()
                 .from(resources)
                 .where(
                     and(
@@ -127,6 +135,7 @@ export async function createRedirect(
                 )
                 .limit(1);
 
+            resource = res.at(0) ?? null;
             if (!resource) {
                 return next(
                     createHttpError(
@@ -137,9 +146,10 @@ export async function createRedirect(
             }
         }
 
+        let domain: Domain | null = null;
         if (domainId) {
-            const [domain] = await db
-                .select({ domainId: domains.domainId })
+            const res = await db
+                .select()
                 .from(domains)
                 .innerJoin(
                     orgDomains,
@@ -153,6 +163,7 @@ export async function createRedirect(
                 )
                 .limit(1);
 
+            domain = res.at(0)?.domains ?? null;
             if (!domain) {
                 return next(
                     createHttpError(
@@ -183,6 +194,13 @@ export async function createRedirect(
                 enabled: enabled ?? true
             })
             .returning();
+
+        if (domain) {
+            const fullDomain = [subdomain ?? null, domain.baseDomain]
+                .filter(Boolean)
+                .join(".");
+            await createCertificate(domain.domainId, fullDomain, db);
+        }
 
         return response<CreateRedirectResponse>(res, {
             data: {

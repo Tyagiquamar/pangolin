@@ -459,6 +459,11 @@ export async function getTraefikConfig(
         }
     };
 
+    console.dir(
+        { resourcesMap, resourcesWithTargetsAndSites },
+        { depth: null }
+    );
+
     // get the key and the resource
     for (const [, resource] of resourcesMap.entries()) {
         const targets = resource.targets as TargetWithSite[];
