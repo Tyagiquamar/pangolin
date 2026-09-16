@@ -6,7 +6,8 @@ import {
     resourceAiProviders,
     siteResources,
     siteNetworks,
-    exitNodes
+    exitNodes,
+    redirects
 } from "@server/db";
 import {
     and,
@@ -128,14 +129,21 @@ export async function getTraefikConfig(
             siteOnline: sites.online,
             subnet: sites.exitNodeSubnet,
             exitNodeId: sites.exitNodeId,
+
             // Domain cert resolver fields
             domainCertResolver: domains.certResolver,
-            preferWildcardCert: domains.preferWildcardCert
+            preferWildcardCert: domains.preferWildcardCert,
+
+            // redirects
+            redirectMatchPath: redirects.matchPath,
+            redirectPathMatchType: redirects.pathMatchType,
+            redirectPriority: redirects.priority
         })
         .from(sites)
         .innerJoin(targets, eq(targets.siteId, sites.siteId))
         .innerJoin(resources, eq(resources.resourceId, targets.resourceId))
         .leftJoin(domains, eq(domains.domainId, resources.domainId))
+        .leftJoin(redirects, eq(resources.resourceId, redirects.resourceId))
         .leftJoin(
             targetHealthCheck,
             eq(targetHealthCheck.targetId, targets.targetId)
@@ -166,6 +174,13 @@ export async function getTraefikConfig(
             )
         )
         .orderBy(desc(targets.priority), targets.targetId); // stable ordering
+
+    console.dir(
+        {
+            resourcesWithTargetsAndSites
+        },
+        { depth: null }
+    );
 
     // Group by resource and include targets with their unique site data
     const resourcesMap = new Map();

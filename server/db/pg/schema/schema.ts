@@ -254,7 +254,7 @@ export const redirects = pgTable("redirects", {
     rewritePathType: varchar("rewritePathType").$type<
         "exact" | "prefix" | "regex" | "stripPrefix"
     >(), // exact, prefix, regex, stripPrefix
-
+    priority: integer("priority").default(100),
     permanent: boolean("permanent").notNull().default(false),
     enabled: boolean("enabled").notNull().default(true)
 });
