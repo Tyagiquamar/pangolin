@@ -17,9 +17,7 @@ export function usePolicyMtls() {
     const api = createApiClient({ env });
     const resource = resourceContext?.resource;
 
-    const supported =
-        !env.flags.disableEnterpriseFeatures &&
-        (!resource || resourceModeSupportsMtls(resource.mode));
+    const supported = !resource || resourceModeSupportsMtls(resource.mode);
 
     const { data: certificates = [], isLoading: isLoadingCertificates } =
         useQuery({

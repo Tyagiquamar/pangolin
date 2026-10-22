@@ -11,7 +11,6 @@ import {
 import { RolesSelector } from "@app/components/roles-selector";
 import { UsersSelector } from "@app/components/users-selector";
 import { FormField } from "@app/components/ui/form";
-import { useEnvContext } from "@app/hooks/useEnvContext";
 import { toast } from "@app/hooks/useToast";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -45,7 +44,6 @@ export function PolicyAuthStackSectionCreate({
     emailEnabled
 }: PolicyAuthStackSectionCreateProps) {
     const t = useTranslations();
-    const { env } = useEnvContext();
     const [editingMethod, setEditingMethod] =
         useState<PolicyAuthMethodId | null>(null);
 
@@ -80,7 +78,7 @@ export function PolicyAuthStackSectionCreate({
     const passcodeActive = Boolean(password);
     const pinActive = Boolean(pincode);
     const headerAuthActive = Boolean(headerAuth);
-    const mtlsSupported = !env.flags.disableEnterpriseFeatures;
+    const mtlsSupported = true;
 
     const closeCredenza = () => setEditingMethod(null);
 
